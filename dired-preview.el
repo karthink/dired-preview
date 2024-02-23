@@ -176,7 +176,7 @@ until it drops below this number.")
 See user option `dired-preview-ignored-extensions-regexp'."
   (when-let (((stringp dired-preview-ignored-extensions-regexp))
              (ext (file-name-extension file)))
-    (string-match-p ext dired-preview-ignored-extensions-regexp)))
+    (string-match-p (concat ext "$") dired-preview-ignored-extensions-regexp)))
 
 (defun dired-preview--file-large-p (file)
   "Return non-nil if FILE exceeds `dired-preview-max-size'."
@@ -193,13 +193,17 @@ See user option `dired-preview-ignored-extensions-regexp'."
   (with-selected-window window
     (set-window-parameter window 'dired-preview-window value)
     (set-window-parameter window 'dedicated value)
-    (set-window-parameter window 'no-other-window value)))
+    ;; (set-window-parameter window 'no-other-window value)
+    ))
 
 (defun dired-preview--run-mode-hooks ()
   "Run mode hooks in current buffer, if `delayed-mode-hooks' is non-nil."
   (cond
    ((window-parameter (selected-window) 'dired-preview-window)
-    (dired-preview--delete-windows))
+    ;; (dired-preview--delete-windows)
+    (and (window-live-p dired-preview--window)
+         (delete-window dired-preview--window))
+    )
    ((and delay-mode-hooks (current-buffer))
     (dired-preview--set-window-parameters (selected-window) nil)
     (apply #'run-hooks (delete-dups delayed-mode-hooks))
@@ -310,7 +314,10 @@ Always return FILE buffer."
 (defun dired-preview--close-previews ()
   "Kill preview buffers and delete their windows."
   (dired-preview--cancel-timer)
-  (dired-preview--delete-windows)
+  ;; (dired-preview--delete-windows)
+  (and (window-live-p dired-preview--window)
+       (delete-window dired-preview--window))
+  (setq dired-preview--window nil)
   (dired-preview--kill-buffers)
   (dired-preview--kill-large-buffers))
 
@@ -321,14 +328,25 @@ Always return FILE buffer."
     (remove-hook 'window-state-change-hook #'dired-preview--close-previews-outside-dired)
     (put 'dired-preview-start 'function-executed nil)))
 
-;; TODO 2023-10-05: We may no longer need this function.
+(defvar-local dired-preview--window nil)
+
 (defun dired-preview--display-buffer (buffer)
-  "Call `display-buffer' for BUFFER."
-  (display-buffer buffer))
+  "Display BUFFER in the dired-preview window"
+  (if (window-live-p dired-preview--window)
+      (progn
+        (set-window-buffer dired-preview--window
+                           buffer :keep-margins)
+        dired-preview--window)
+    (setq dired-preview--window (display-buffer buffer))))
+
+;; TODO 2023-10-05: We may no longer need this function.
+;; (defun dired-preview--display-buffer (buffer)
+;;   "Call `display-buffer' for BUFFER."
+;;   (display-buffer buffer))
 
 (defun dired-preview-display-file (file)
   "Display preview of FILE if appropriate."
-  (dired-preview--delete-windows)
+  ;; (dired-preview--delete-windows)
   (when-let ((buffer (dired-preview--get-preview-buffer file)))
     (dired-preview--display-buffer buffer)
     (when-let ((window (get-buffer-window buffer)))
@@ -336,8 +354,8 @@ Always return FILE buffer."
 
 (defun dired-preview--preview-p (file)
   "Return non-nil if FILE can be previewed."
-  (and (file-regular-p file)
-       (not (file-directory-p file))
+  (and (or (file-regular-p file) (file-directory-p file))
+       ;; (not (file-directory-p file))
        (not (dired-preview--file-displayed-p file))
        (not (dired-preview--file-ignored-p file))))
 
@@ -368,7 +386,10 @@ the preview with `dired-preview-delay' of idleness."
 	(dired-preview-start file)
       (if (not (memq this-command dired-preview-trigger-commands))
 	  nil
-	(dired-preview--delete-windows)))
+	;; (dired-preview--delete-windows)
+        (and (window-live-p dired-preview--window)
+             (delete-window dired-preview--window))
+        ))
     (dired-preview--close-previews-outside-dired)))
 
 (defun dired-preview-disable-preview ()
